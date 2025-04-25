@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Where Am I?</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        min-height: 100vh;
+        background: #f5f7fa;
+        padding: 2rem;
+      }
+      h1 {
+        margin-bottom: 1rem;
+        color: #333;
+      }
+      button {
+        padding: 0.75rem 1.25rem;
+        border: none;
+        border-radius: 8px;
+        background: #0074d9;
+        color: white;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: background 0.2s ease;
+      }
+      button:hover {
+        background: #005fa3;
+      }
+      #output {
+        width: 100%;
+        max-width: 600px;
+        margin-top: 2rem;
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+      .label {
+        font-weight: 600;
+        color: #555;
+      }
+      a {
+        color: #0074d9;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Where Am I?</h1>
+    <button id="locateBtn">Find My Location</button>
+    <div id="output" style="display: none"></div>
+
+    <script>
+      const locateBtn = document.getElementById("locateBtn");
+      const output = document.getElementById("output");
+
+      // Utility: fetch JSON helper
+      async function fetchJSON(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Network error");
+        return res.json();
+      }
+
+      // Reverse‑geocode with Nominatim
+      async function reverseGeocode(lat, lon) {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=16&addressdetails=1`;
+        return fetchJSON(url);
+      }
+
+      // Get first paragraph from Wikipedia
+      async function wikiExtract(title) {
+        const api = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
+          title
+        )}`;
+        try {
+          const data = await fetchJSON(api);
+          return {
+            extract: data.extract,
+            link: data.content_urls.desktop.page,
+          };
+        } catch (_) {
+          return {
+            extract: "No summary available.",
+            link: `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+          };
+        }
+      }
+
+      function showError(msg) {
+        output.style.display = "block";
+        output.innerHTML = `<p style="color:red;">${msg}</p>`;
+      }
+
+      locateBtn.addEventListener("click", () => {
+        if (!navigator.geolocation) {
+          showError("Geolocation is not supported by your browser.");
+          return;
+        }
+
+        locateBtn.disabled = true;
+        locateBtn.textContent = "Locating…";
+
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            try {
+              const { latitude: lat, longitude: lon } = pos.coords;
+              const geoData = await reverseGeocode(lat, lon);
+              const city =
+                geoData.address.city ||
+                geoData.address.town ||
+                geoData.address.village ||
+                geoData.address.county;
+              const hood =
+                geoData.address.neighbourhood ||
+                geoData.address.suburb ||
+                geoData.address.city_district ||
+                "N/A";
+
+              // Fetch wiki summaries (best‑effort)
+              const cityInfo = await wikiExtract(city);
+              const hoodInfo =
+                hood !== "N/A"
+                  ? await wikiExtract(`${hood}, ${city}`)
+                  : { extract: "—", link: "" };
+
+              output.style.display = "block";
+              output.innerHTML = `
+            <p><span class="label">City:</span> ${city}</p>
+            <p><span class="label">Neighborhood:</span> ${hood}</p>
+            <p><span class="label">About the City:</span> ${
+              cityInfo.extract
+            } <a href="${cityInfo.link}" target="_blank">Read more</a></p>
+            <p><span class="label">About the Neighborhood:</span> ${
+              hoodInfo.extract
+            } ${
+                hoodInfo.link
+                  ? `<a href="${hoodInfo.link}" target="_blank">Read more</a>`
+                  : ""
+              }</p>
+          `;
+            } catch (err) {
+              showError("Could not retrieve location details.");
+              console.error(err);
+            } finally {
+              locateBtn.disabled = false;
+              locateBtn.textContent = "Find My Location";
+            }
+          },
+          (err) => {
+            showError("Permission denied or unavailable location.");
+            locateBtn.disabled = false;
+            locateBtn.textContent = "Find My Location";
+          }
+        );
+      });
+    </script>
+  </body>
+</html>
